@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 // Send a JSON object on UDP at regular interval
 //
 // You can easily test this program with netcat:

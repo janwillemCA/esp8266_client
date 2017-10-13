@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 // Sample Arduino Json Web Client
 // Downloads and parse http://jsonplaceholder.typicode.com/users/1
 //

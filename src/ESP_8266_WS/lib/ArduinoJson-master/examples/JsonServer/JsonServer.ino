@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 // Sample Arduino Json Web Server
 // Created by Benoit Blanchon.
 // Heavily inspired by "Web Server" from David A. Mellis and Tom Igoe
