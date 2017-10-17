@@ -8,18 +8,22 @@
  *   - added 2 seperate functions to send data (info & status)
  * ----------------------------------------------------------------------- */
 
-
-#include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <WebSocketsClient.h>
 #include <Hash.h>
 #include <ArduinoJson.h>
+
 
 const char* IP_ADRESS = "192.168.0.110";
 const int PORT = 8080;
 const char * SSID = "DEVKEET";
 const char * PASSWD = "wifigratisbord";
 
+extern "C" {
+#include "user_interface.h"
+}
+
+/* Enable ADC to read voltage level of the ESP8266 */
 ADC_MODE(ADC_VCC);
 
 ESP8266WiFiMulti WiFiMulti;
@@ -27,8 +31,8 @@ WebSocketsClient webSocket;
 StaticJsonBuffer<200> jsonBuffer;
 
 char buffer[256];
-char cmp[] = "whoareyou";
-char status[] = "status";
+const char cmp[] = "whoareyou";
+const char status[] = "status";
 
 /* function which converts a typedef IPAdress to a String */
 String ipToString(IPAddress ip){
@@ -100,6 +104,8 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
 /* connect to network */
 void connect_wifi()
 {
+   //WiFi.persistent(false);
+  //  WiFi.forceSleepWake();      // <-- WITHOUT THIS ESP CONNECTS ONLY AFTER FIRST FEW RESTARTS OR DOESN'T CONNECT AT ALL
   WiFiMulti.addAP(SSID, PASSWD);
 
   while (WiFiMulti.run() != WL_CONNECTED) {
@@ -117,7 +123,10 @@ void init_websocket()
 
 void setup()
 {
+  connect_wifi();
   init_websocket();
 }
 
-void loop() { webSocket.loop(); }
+void loop() {
+  webSocket.loop();
+}
