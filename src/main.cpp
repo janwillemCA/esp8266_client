@@ -34,10 +34,13 @@ byte address = 0x11;
 int CS= 15;
 int i=0;
 
+int authCount = 0;
+
 /* sleep test */
 extern "C" {
 #include "user_interface.h"
 }
+
 
 /* Enable ADC to read voltage level of the ESP8266 */
 ADC_MODE(ADC_VCC);
@@ -46,7 +49,6 @@ ESP8266WiFiMulti WiFiMulti;
 WebSocketsClient webSocket;
 StaticJsonBuffer<200> jsonBuffer;
 StaticJsonBuffer<200> parseBuffer;
-
 
 JsonObject& json = jsonBuffer.createObject();
 JsonObject& jsonData = json.createNestedObject("data");
@@ -74,6 +76,8 @@ uint32_t get_vcc()
 /* function which sends device information */
 void send_info()
 {
+  JsonObject& json = jsonBuffer.createObject();
+  JsonObject& jsonData = json.createNestedObject("data");
 
   jsonData["device_id"] = ESP.getChipId();
   jsonData["mac_addr"] = WiFi.macAddress();
@@ -82,47 +86,45 @@ void send_info()
   json["command"] = "auth";
 
   json.printTo(infoBuff, sizeof(infoBuff));
-  //jsonBuffer.clear();
   webSocket.sendTXT(infoBuff);
+  jsonBuffer.clear();
 }
 
 /* function whichs sends device status */
 void send_status()
 {
-  //JsonObject& json = jsonBuffer.createObject();
-  //JsonObject& jsonData = json.createNestedObject("data");
+  JsonObject& json = jsonBuffer.createObject();
+  JsonObject& jsonData = json.createNestedObject("data");
+
   jsonData["vcc_in"] = get_vcc();
   jsonData["cpu_freq"] = ESP.getCpuFreqMHz();
 
   json["command"] = "status";
 
   json.printTo(buffer, sizeof(buffer));
-  jsonBuffer.clear();
   webSocket.sendTXT(buffer);
+  jsonBuffer.clear();
+
 }
 
 void parsejson(uint8_t *payload1)
 {
   JsonObject& jsonpayload = parseBuffer.parseObject(payload1);
-  parseBuffer.clear();
 
-  if(!jsonpayload.success()) {
-      webSocket.sendTXT("FOUT!!!!!!");
-  }
-  else if(jsonpayload["command"] == "auth")
+  if(jsonpayload["command"] == "auth")
     send_info();
-  else if(jsonpayload["command"] == "status") {
+  else if(jsonpayload["command"] == "status")
     send_status();
-  }
   else if(jsonpayload["command"] == "dim") {
     jsonpayload["data"]["value"];
     int pwm = jsonpayload["data"]["value"];
 
-    Serial.print("Value: ");
-    Serial.println(pwm);
-
     digitalPotWrite(pwm);
+    json["command"] = "ack";
+
+
   }
+  parseBuffer.clear();
 }
 
 /* function whichs sends data */
@@ -133,7 +135,6 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
   case WStype_CONNECTED:
     break;
   case WStype_TEXT:
-    Serial.printf("get Text: %s\n", payload);
     parsejson(payload);
     break;
   case WStype_BIN:
@@ -187,7 +188,6 @@ void setup()
   connect_wifi();
   init_websocket();
   init_SPI();
-  Serial.begin(115200);
 }
 
 void loop() {
