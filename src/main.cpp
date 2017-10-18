@@ -12,13 +12,30 @@
 #include <WebSocketsClient.h>
 #include <Hash.h>
 #include <ArduinoJson.h>
+#include <SPI.h>
 
+String ipToString(IPAddress ip);
+uint32_t get_vcc();
+void send_info();
+void send_status();
+void webSocketEvent(WStype_t type, uint8_t *payload, size_t length);
+void connect_wifi();
+void init_websocket();
+void init_SPI();
+void light();
+int digitalPotWrite(int value);
 
 const char* IP_ADRESS = "192.168.0.110";
 const int PORT = 8080;
 const char * SSID = "DEVKEET";
 const char * PASSWD = "wifigratisbord";
 
+/* SPI potentiometer */
+byte address = 0x11;
+int CS= 15;
+int i=0;
+
+/* sleep test */
 extern "C" {
 #include "user_interface.h"
 }
@@ -121,12 +138,45 @@ void init_websocket()
   webSocket.setReconnectInterval(5000);
 }
 
+void init_SPI()
+{
+  pinMode (CS, OUTPUT);
+  SPI.begin();
+  // adjust high and low resistance of potentiometer
+  // adjust Highest Resistance .
+   digitalPotWrite(0x00);
+   delay(1000);
+
+      // adjust  wiper in the  Mid point  .
+   digitalPotWrite(0x80);
+   delay(1000);
+
+   // adjust Lowest Resistance .
+   digitalPotWrite(0xFF);
+   delay(1000);
+}
+
+int digitalPotWrite(int value)
+{
+  digitalWrite(CS, LOW);
+  SPI.transfer(address);
+  SPI.transfer(value);
+  digitalWrite(CS, HIGH);
+}
+
+void light()
+{
+  digitalPotWrite(100);
+}
+
 void setup()
 {
   connect_wifi();
   init_websocket();
+  init_SPI();
 }
 
 void loop() {
+  light();
   webSocket.loop();
 }
