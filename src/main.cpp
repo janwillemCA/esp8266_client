@@ -3,7 +3,7 @@
  *   Copyright (C) 2017 Jan Willem Casteleijn
  *   Copyright 20017 Bramboos Media; author J.W.A Casteleijn
  *
- *   version 1.1
+ *   version 1.2
  *
  *   - added 2 seperate functions to send data (info & status)
  * ----------------------------------------------------------------------- */
@@ -22,7 +22,6 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length);
 void connect_wifi();
 void init_websocket();
 void init_SPI();
-void light();
 int digitalPotWrite(int value);
 
 const char* IP_ADRESS = "192.168.0.110";
@@ -46,8 +45,14 @@ ADC_MODE(ADC_VCC);
 ESP8266WiFiMulti WiFiMulti;
 WebSocketsClient webSocket;
 StaticJsonBuffer<200> jsonBuffer;
+StaticJsonBuffer<200> parseBuffer;
+
+
+JsonObject& json = jsonBuffer.createObject();
+JsonObject& jsonData = json.createNestedObject("data");
 
 char buffer[256];
+char infoBuff[256];
 const char cmp[] = "whoareyou";
 const char status[] = "status";
 
@@ -69,26 +74,23 @@ uint32_t get_vcc()
 /* function which sends device information */
 void send_info()
 {
-  JsonObject& json = jsonBuffer.createObject();
-  JsonObject& jsonData = json.createNestedObject("data");
 
   jsonData["device_id"] = ESP.getChipId();
   jsonData["mac_addr"] = WiFi.macAddress();
   jsonData["ip_addr"] = ipToString(WiFi.localIP());
 
-  json["command"] = "iam";
+  json["command"] = "auth";
 
-  json.printTo(buffer, sizeof(buffer));
-  jsonBuffer.clear();
-  webSocket.sendTXT(buffer);
+  json.printTo(infoBuff, sizeof(infoBuff));
+  //jsonBuffer.clear();
+  webSocket.sendTXT(infoBuff);
 }
 
 /* function whichs sends device status */
 void send_status()
 {
-  JsonObject& json = jsonBuffer.createObject();
-  JsonObject& jsonData = json.createNestedObject("data");
-
+  //JsonObject& json = jsonBuffer.createObject();
+  //JsonObject& jsonData = json.createNestedObject("data");
   jsonData["vcc_in"] = get_vcc();
   jsonData["cpu_freq"] = ESP.getCpuFreqMHz();
 
@@ -99,6 +101,30 @@ void send_status()
   webSocket.sendTXT(buffer);
 }
 
+void parsejson(uint8_t *payload1)
+{
+  JsonObject& jsonpayload = parseBuffer.parseObject(payload1);
+  parseBuffer.clear();
+
+  if(!jsonpayload.success()) {
+      webSocket.sendTXT("FOUT!!!!!!");
+  }
+  else if(jsonpayload["command"] == "auth")
+    send_info();
+  else if(jsonpayload["command"] == "status") {
+    send_status();
+  }
+  else if(jsonpayload["command"] == "dim") {
+    jsonpayload["data"]["value"];
+    int pwm = jsonpayload["data"]["value"];
+
+    Serial.print("Value: ");
+    Serial.println(pwm);
+
+    digitalPotWrite(pwm);
+  }
+}
+
 /* function whichs sends data */
 void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
@@ -107,11 +133,8 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
   case WStype_CONNECTED:
     break;
   case WStype_TEXT:
-		if (strcmp((const char*)payload, cmp) == 0)
-      send_info();   /* <-- sends data if server requests data */
-    else if(strcmp((const char * )payload, status) == 0)
-      send_status(); /* <-- sends data if server requests data */
-    delay(1000);
+    Serial.printf("get Text: %s\n", payload);
+    parsejson(payload);
     break;
   case WStype_BIN:
     break;
@@ -121,10 +144,7 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
 /* connect to network */
 void connect_wifi()
 {
-   //WiFi.persistent(false);
-  //  WiFi.forceSleepWake();      // <-- WITHOUT THIS ESP CONNECTS ONLY AFTER FIRST FEW RESTARTS OR DOESN'T CONNECT AT ALL
   WiFiMulti.addAP(SSID, PASSWD);
-
   while (WiFiMulti.run() != WL_CONNECTED) {
     delay(1000);
   }
@@ -142,18 +162,16 @@ void init_SPI()
 {
   pinMode (CS, OUTPUT);
   SPI.begin();
-  // adjust high and low resistance of potentiometer
-  // adjust Highest Resistance .
-   digitalPotWrite(0x00);
-   delay(1000);
 
-      // adjust  wiper in the  Mid point  .
-   digitalPotWrite(0x80);
-   delay(1000);
+  digitalPotWrite(0x00);
+  delay(1000);
+
+  digitalPotWrite(0x80);
+  delay(1000);
 
    // adjust Lowest Resistance .
-   digitalPotWrite(0xFF);
-   delay(1000);
+  digitalPotWrite(0xFF);
+  delay(1000);
 }
 
 int digitalPotWrite(int value)
@@ -164,19 +182,14 @@ int digitalPotWrite(int value)
   digitalWrite(CS, HIGH);
 }
 
-void light()
-{
-  digitalPotWrite(100);
-}
-
 void setup()
 {
   connect_wifi();
   init_websocket();
   init_SPI();
+  Serial.begin(115200);
 }
 
 void loop() {
-  light();
   webSocket.loop();
 }
