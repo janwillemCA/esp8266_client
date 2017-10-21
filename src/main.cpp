@@ -1,11 +1,11 @@
 /* -*- ESP_IOT -*- ------------------------------------------------------- *
  *
  *   Copyright (C) 2017 Jan Willem Casteleijn
- *   Copyright 20017 Bramboos Media; author J.W.A Casteleijn
+ *   Copyright 2017 Bramboos Media; author J.W.A Casteleijn
  *
- *   version 1.2
+ *   version 1.2.1
  *
- *   - added 2 seperate functions to send data (info & status)
+ *   - MQQT implemented
  * ----------------------------------------------------------------------- */
 
 #include <ESP8266WiFi.h>
@@ -22,10 +22,9 @@ void init_SPI();
 int digitalPotWrite(int value);
 void messageReceived(String &topic, String &payload);
 
-const char* IP_ADRESS = "192.168.0.110";
-const int PORT = 8080;
 const char * SSID = "DEVKEET";
 const char * PASSWD = "wifigratisbord";
+
 unsigned long lastMillis = 0;
 
 /* SPI potentiometer */
@@ -67,8 +66,6 @@ void connect() {
     Serial.print(".");
     delay(1000);
   }
-
-
   // client.unsubscribe("/hello");
 }
 
@@ -85,7 +82,6 @@ void init_SPI()
   digitalPotWrite(0x80);
   delay(1000);
 
-   // adjust Lowest Resistance .
   digitalPotWrite(0xFF);
   delay(1000);
 }
@@ -100,7 +96,6 @@ int digitalPotWrite(int value)
 
 void setup() {
   Serial.begin(115200);
-
   init_SPI();
   WiFi.begin(SSID, PASSWD);
 
@@ -119,14 +114,15 @@ void messageReceived(String &topic, String &payload) {
 
 void loop() {
   WiFi.begin(SSID, PASSWD);
-
   client.loop();
-  delay(10);  
+
+  delay(10);  // <- fixes some issues with WiFi stability
 
   if (!client.connected()) {
     connect();
   }
 
+  /* mcp11xxxx demo */
   i++;
   delay(250);
   digitalPotWrite(i);
