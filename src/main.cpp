@@ -3,14 +3,17 @@
  *   Copyright (C) 2017 Jan Willem Casteleijn
  *   Copyright 20017 Bramboos Media; author J.W.A Casteleijn
  *
- *   version 1.2.1
+ *   version 1.2
  *
- *   - using mqqt
+ *   - added 2 seperate functions to send data (info & status)
  * ----------------------------------------------------------------------- */
 
 #include <ESP8266WiFi.h>
 #include <SPI.h>
 #include <MQTTClient.h>
+
+#define MQQT_CLIENT_ID  (String(ESP.getChipId(), HEX)).c_str() + (String("/connected"))
+#define MQQT_DIM  (String(ESP.getChipId(), HEX)).c_str() + (String("/dim"))
 
 String ipToString(IPAddress ip);
 uint32_t get_vcc();
@@ -37,8 +40,7 @@ WiFiClientSecure net;
 MQTTClient client;
 
 /* function which converts a typedef IPAdress to a String */
-String ipToString(IPAddress ip)
-{
+String ipToString(IPAddress ip){
   String s="";
   for (int i=0; i<4; i++)
     s += i  ? "." + String(ip[i]) : String(ip[i]);
@@ -53,8 +55,7 @@ uint32_t get_vcc()
 }
 
 /* connect to network */
-void connect() 
-{
+void connect() {
   Serial.print("checking wifi...");
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
@@ -67,9 +68,7 @@ void connect()
     delay(1000);
   }
 
-  Serial.println("\nconnected!");
 
-  client.subscribe("/hello");
   // client.unsubscribe("/hello");
 }
 
@@ -99,43 +98,35 @@ int digitalPotWrite(int value)
   digitalWrite(CS, HIGH);
 }
 
-void setup() 
-{
+void setup() {
   Serial.begin(115200);
-  init_SPI();
 
+  init_SPI();
   WiFi.begin(SSID, PASSWD);
-  // Note: Local domain names (e.g. "Computer.local" on OSX) are not supported by Arduino.
-  // You need to set the IP address directly.
-  //
-  // MQTT brokers usually use port 8883 for secure connections.
+
   client.begin("localbram.bladevm.com", 8443, net);
   client.onMessage(messageReceived);
 
   connect();
+
+  client.publish(MQQT_CLIENT_ID);
+  client.subscribe(MQQT_DIM);
 }
 
-void messageReceived(String &topic, String &payload) 
-{
+void messageReceived(String &topic, String &payload) {
   Serial.println("incoming: " + topic + " - " + payload);
 }
 
-void loop() 
-{
+void loop() {
   WiFi.begin(SSID, PASSWD);
 
   client.loop();
-  delay(10);  // <- fixes some issues with WiFi stability
+  delay(10);  
 
   if (!client.connected()) {
     connect();
   }
 
-  // publish a message roughly every second.
-  if (millis() - lastMillis > 1000) {
-    lastMillis = millis();
-    client.publish("/hello", "world");
-  }
   i++;
   delay(250);
   digitalPotWrite(i);
