@@ -3,63 +3,42 @@
  *   Copyright (C) 2017 Jan Willem Casteleijn
  *   Copyright 20017 Bramboos Media; author J.W.A Casteleijn
  *
- *   version 1.2
+ *   version 1.2.1
  *
- *   - added 2 seperate functions to send data (info & status)
+ *   - using mqqt
  * ----------------------------------------------------------------------- */
 
-#include <ESP8266WiFiMulti.h>
-#include <WebSocketsClient.h>
-#include <Hash.h>
-#include <ArduinoJson.h>
+#include <ESP8266WiFi.h>
 #include <SPI.h>
+#include <MQTTClient.h>
 
 String ipToString(IPAddress ip);
 uint32_t get_vcc();
-void send_info();
-void send_status();
-void webSocketEvent(WStype_t type, uint8_t *payload, size_t length);
 void connect_wifi();
-void init_websocket();
 void init_SPI();
 int digitalPotWrite(int value);
+void messageReceived(String &topic, String &payload);
 
 const char* IP_ADRESS = "192.168.0.110";
 const int PORT = 8080;
 const char * SSID = "DEVKEET";
 const char * PASSWD = "wifigratisbord";
+unsigned long lastMillis = 0;
 
 /* SPI potentiometer */
 byte address = 0x11;
 int CS= 15;
-int i=0;
-
-int authCount = 0;
-
-/* sleep test */
-extern "C" {
-#include "user_interface.h"
-}
-
+int i = 0;
 
 /* Enable ADC to read voltage level of the ESP8266 */
 ADC_MODE(ADC_VCC);
 
-ESP8266WiFiMulti WiFiMulti;
-WebSocketsClient webSocket;
-StaticJsonBuffer<200> jsonBuffer;
-StaticJsonBuffer<200> parseBuffer;
-
-JsonObject& json = jsonBuffer.createObject();
-JsonObject& jsonData = json.createNestedObject("data");
-
-char buffer[256];
-char infoBuff[256];
-const char cmp[] = "whoareyou";
-const char status[] = "status";
+WiFiClientSecure net;
+MQTTClient client;
 
 /* function which converts a typedef IPAdress to a String */
-String ipToString(IPAddress ip){
+String ipToString(IPAddress ip)
+{
   String s="";
   for (int i=0; i<4; i++)
     s += i  ? "." + String(ip[i]) : String(ip[i]);
@@ -73,94 +52,31 @@ uint32_t get_vcc()
     return getVcc;
 }
 
-/* function which sends device information */
-void send_info()
-{
-  JsonObject& json = jsonBuffer.createObject();
-  JsonObject& jsonData = json.createNestedObject("data");
-
-  jsonData["device_id"] = ESP.getChipId();
-  jsonData["mac_addr"] = WiFi.macAddress();
-  jsonData["ip_addr"] = ipToString(WiFi.localIP());
-
-  json["command"] = "auth";
-
-  json.printTo(infoBuff, sizeof(infoBuff));
-  webSocket.sendTXT(infoBuff);
-  jsonBuffer.clear();
-}
-
-/* function whichs sends device status */
-void send_status()
-{
-  JsonObject& json = jsonBuffer.createObject();
-  JsonObject& jsonData = json.createNestedObject("data");
-
-  jsonData["vcc_in"] = get_vcc();
-  jsonData["cpu_freq"] = ESP.getCpuFreqMHz();
-
-  json["command"] = "status";
-
-  json.printTo(buffer, sizeof(buffer));
-  webSocket.sendTXT(buffer);
-  jsonBuffer.clear();
-
-}
-
-void parsejson(uint8_t *payload1)
-{
-  JsonObject& jsonpayload = parseBuffer.parseObject(payload1);
-
-  if(jsonpayload["command"] == "auth")
-    send_info();
-  else if(jsonpayload["command"] == "status")
-    send_status();
-  else if(jsonpayload["command"] == "dim") {
-    jsonpayload["data"]["value"];
-    int pwm = jsonpayload["data"]["value"];
-
-    digitalPotWrite(pwm);
-    json["command"] = "ack";
-
-
-  }
-  parseBuffer.clear();
-}
-
-/* function whichs sends data */
-void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
-  switch (type) {
-  case WStype_DISCONNECTED:
-    break;
-  case WStype_CONNECTED:
-    break;
-  case WStype_TEXT:
-    parsejson(payload);
-    break;
-  case WStype_BIN:
-    break;
-  }
-}
-
 /* connect to network */
-void connect_wifi()
+void connect() 
 {
-  WiFiMulti.addAP(SSID, PASSWD);
-  while (WiFiMulti.run() != WL_CONNECTED) {
+  Serial.print("checking wifi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
     delay(1000);
   }
+
+  Serial.print("\nconnecting...");
+  while (!client.connect("arduino", "try", "try")) {
+    Serial.print(".");
+    delay(1000);
+  }
+
+  Serial.println("\nconnected!");
+
+  client.subscribe("/hello");
+  // client.unsubscribe("/hello");
 }
 
-/* initialise websocket */
-void init_websocket()
-{
-  webSocket.begin(IP_ADRESS, PORT, "/");
-  webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(5000);
-}
 
 void init_SPI()
 {
+  Serial.println("Init SPI.....");
   pinMode (CS, OUTPUT);
   SPI.begin();
 
@@ -183,13 +99,46 @@ int digitalPotWrite(int value)
   digitalWrite(CS, HIGH);
 }
 
-void setup()
+void setup() 
 {
-  connect_wifi();
-  init_websocket();
+  Serial.begin(115200);
   init_SPI();
+
+  WiFi.begin(SSID, PASSWD);
+  // Note: Local domain names (e.g. "Computer.local" on OSX) are not supported by Arduino.
+  // You need to set the IP address directly.
+  //
+  // MQTT brokers usually use port 8883 for secure connections.
+  client.begin("localbram.bladevm.com", 8443, net);
+  client.onMessage(messageReceived);
+
+  connect();
 }
 
-void loop() {
-  webSocket.loop();
+void messageReceived(String &topic, String &payload) 
+{
+  Serial.println("incoming: " + topic + " - " + payload);
+}
+
+void loop() 
+{
+  WiFi.begin(SSID, PASSWD);
+
+  client.loop();
+  delay(10);  // <- fixes some issues with WiFi stability
+
+  if (!client.connected()) {
+    connect();
+  }
+
+  // publish a message roughly every second.
+  if (millis() - lastMillis > 1000) {
+    lastMillis = millis();
+    client.publish("/hello", "world");
+  }
+  i++;
+  delay(250);
+  digitalPotWrite(i);
+  if(i == 255)
+    i = 0;
 }
